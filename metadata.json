@@ -1,0 +1,7 @@
+{
+  "name": "VBV Code Doctor",
+  "description": "Desktop-style application to analyze and convert VBA/VB code for 32-bit and 64-bit compatibility using AI.",
+  "requestFramePermissions": [
+    "clipboard-read"
+  ]
+}
