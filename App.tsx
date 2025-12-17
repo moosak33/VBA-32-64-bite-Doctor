@@ -1,8 +1,8 @@
-import React, { useState } from 'react';
-import { Cpu, Zap, RotateCcw, ShieldCheck } from 'lucide-react';
+import React, { useState, useEffect } from 'react';
+import { Cpu, Zap, RotateCcw, ShieldCheck, Settings2, FileCode, MessageSquare, Bug, Hash, AlignLeft, Wrench, Activity, Languages, Globe } from 'lucide-react';
 import CodeEditor from './components/CodeEditor';
 import Terminal from './components/Terminal';
-import { AnalysisStatus, LogEntry } from './types';
+import { AnalysisStatus, LogEntry, ProcessingOptions } from './types';
 import { convertVBACode, analyzeCodeIssues } from './services/geminiService';
 
 export default function App() {
@@ -10,6 +10,51 @@ export default function App() {
   const [outputCode, setOutputCode] = useState<string>('');
   const [status, setStatus] = useState<AnalysisStatus>(AnalysisStatus.IDLE);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  
+  // Global Usage Counter State
+  const [usageCount, setUsageCount] = useState<number>(0);
+  const [isCountLoaded, setIsCountLoaded] = useState<boolean>(false);
+  
+  // Options State
+  const [options, setOptions] = useState<ProcessingOptions>({
+    compatibility: true,
+    formatting: false,
+    commentsAr: false,
+    commentsEn: false,
+    errorHandling: false,
+    lineNumbers: false,
+    codeCorrection: false
+  });
+
+  // Fetch Global Count on Mount
+  useEffect(() => {
+    const fetchGlobalCount = async () => {
+      try {
+        // Changed key to vba-doctor-v2 to reset counter.
+        const response = await fetch('https://api.countapi.xyz/get/gemini-vba-doctor-v2/conversions');
+        if (response.ok) {
+          const data = await response.json();
+          setUsageCount(data.value || 0);
+          setIsCountLoaded(true);
+        } else {
+          // If key doesn't exist yet, it's 0.
+          setUsageCount(0);
+          setIsCountLoaded(true);
+        }
+      } catch (error) {
+        useFallbackCount();
+      }
+    };
+
+    const useFallbackCount = () => {
+      const local = parseInt(localStorage.getItem('vba_doctor_usage') || '0', 10);
+      // Removed fake base number. Shows real local count if API fails.
+      setUsageCount(local); 
+      setIsCountLoaded(true);
+    };
+
+    fetchGlobalCount();
+  }, []);
 
   const addLog = (message: string, type: LogEntry['type'] = 'info') => {
     setLogs(prev => [...prev, {
@@ -28,9 +73,13 @@ export default function App() {
     addLog('System reset.', 'info');
   };
 
+  const toggleOption = (key: keyof ProcessingOptions) => {
+    setOptions(prev => ({ ...prev, [key]: !prev[key] }));
+  };
+
   const handleProcess = async () => {
     if (!inputCode.trim()) {
-      addLog('Input is empty. Please provide VBV/VBA code.', 'warning');
+      addLog('Input is empty. Please provide VBA code.', 'warning');
       return;
     }
 
@@ -39,34 +88,49 @@ export default function App() {
     addLog('Initializing code analysis module...', 'info');
     
     // Quick heuristic check before AI
-    const hasPtrSafe = inputCode.toLowerCase().includes('ptrsafe');
-    const hasLongPtr = inputCode.toLowerCase().includes('longptr');
-    
-    if (!hasPtrSafe) {
-        addLog('Detected potential 32-bit legacy Declarations (Missing PtrSafe).', 'warning');
-    } else {
-        addLog('Found "PtrSafe" keywords, checking deep compatibility...', 'info');
+    if (options.compatibility) {
+        const hasPtrSafe = inputCode.toLowerCase().includes('ptrsafe');
+        if (!hasPtrSafe) {
+            addLog('Detected potential 32-bit legacy Declarations (Missing PtrSafe).', 'warning');
+        }
     }
 
     try {
-        // AI Analysis
+        // AI Analysis (Only runs basic checks, separate from the main conversion options)
         const issues = await analyzeCodeIssues(inputCode);
         if (issues.length > 0) {
             issues.forEach(issue => addLog(`Issue identified: ${issue}`, 'warning'));
         } else {
-             addLog('Code structure looks mostly compatible, but will optimize.', 'success');
+             addLog('Initial structure analysis completed.', 'success');
         }
 
         // Phase 2: Convert
         setStatus(AnalysisStatus.CONVERTING);
-        addLog('Starting Generative AI conversion engine...', 'info');
+        addLog('Applying selected processing rules...', 'info');
         
-        const converted = await convertVBACode(inputCode);
+        const converted = await convertVBACode(inputCode, options);
         
         setOutputCode(converted);
         setStatus(AnalysisStatus.COMPLETED);
-        addLog('Conversion completed successfully.', 'success');
-        addLog('Code is now compatible with 32-bit and 64-bit systems.', 'success');
+        addLog('Processing completed successfully.', 'success');
+        
+        // Increment Global Usage Counter
+        try {
+          const res = await fetch('https://api.countapi.xyz/hit/gemini-vba-doctor-v2/conversions');
+          if (res.ok) {
+            const data = await res.json();
+            setUsageCount(data.value);
+          } else {
+             // Fallback increment
+             setUsageCount(prev => prev + 1);
+          }
+        } catch (e) {
+             setUsageCount(prev => prev + 1);
+        }
+
+        // Keep local sync just in case
+        const currentLocal = parseInt(localStorage.getItem('vba_doctor_usage') || '0', 10);
+        localStorage.setItem('vba_doctor_usage', (currentLocal + 1).toString());
 
     } catch (error: any) {
         setStatus(AnalysisStatus.ERROR);
@@ -77,25 +141,27 @@ export default function App() {
   return (
     <div className="min-h-screen bg-slate-950 flex flex-col overflow-hidden">
       {/* Navbar */}
-      <header className="h-16 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-6 z-10">
+      <header className="h-16 border-b border-slate-800 bg-slate-900/80 backdrop-blur-md flex items-center justify-between px-6 z-10 shrink-0">
         <div className="flex items-center gap-3">
           <div className="w-10 h-10 rounded-lg bg-indigo-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
             <Cpu className="text-white" size={24} />
           </div>
           <div>
-            <h1 className="text-xl font-bold text-white tracking-tight">VBV Code Doctor</h1>
+            <h1 className="text-xl font-bold text-white tracking-tight">VBA Code Doctor</h1>
             <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">AI Powered Architecture Fixer</p>
           </div>
         </div>
         
         <div className="hidden md:flex items-center gap-4 text-sm text-slate-400">
-           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/50 border border-slate-700">
-             <ShieldCheck size={14} className="text-emerald-400"/>
-             <span>x64 Support</span>
+           
+           <div className="flex items-center gap-2 px-3 py-1 rounded-full border bg-slate-800/50 border-slate-700 text-slate-400" title="عدد مرات المعالجة الكلي لجميع المستخدمين">
+             <Globe size={14} className="text-emerald-500" />
+             <span>إجمالي المعالجات: <span className={`font-mono font-bold text-slate-200 transition-opacity ${isCountLoaded ? 'opacity-100' : 'opacity-0'}`}>{usageCount}</span></span>
            </div>
-           <div className="flex items-center gap-1.5 px-3 py-1 rounded-full bg-slate-800/50 border border-slate-700">
-             <ShieldCheck size={14} className="text-blue-400"/>
-             <span>x86 Support</span>
+
+           <div className={`flex items-center gap-1.5 px-3 py-1 rounded-full border transition-colors ${options.compatibility ? 'bg-indigo-900/30 border-indigo-500/50 text-indigo-200' : 'bg-slate-800/50 border-slate-700'}`}>
+             <ShieldCheck size={14} className={options.compatibility ? "text-indigo-400" : "text-slate-500"}/>
+             <span>Engine: {options.compatibility ? 'Active' : 'Standard'}</span>
            </div>
         </div>
       </header>
@@ -103,45 +169,112 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 relative flex flex-col p-4 md:p-6 gap-4 overflow-hidden">
         
-        {/* Controls Bar */}
-        <div className="flex flex-wrap items-center justify-between gap-4 mb-2">
-            <h2 className="text-slate-300 font-medium">مساحة العمل</h2>
-            <div className="flex gap-2">
+        {/* Settings Panel */}
+        <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-3">
+          <div className="flex flex-col md:flex-row items-center justify-between gap-4">
+             
+             {/* Options Grid */}
+             <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-center md:justify-start">
+                <div className="flex items-center gap-2 text-slate-400 text-sm font-semibold ml-2 border-l border-slate-700 pl-3">
+                    <Settings2 size={16} />
+                    <span>خيارات المعالجة:</span>
+                </div>
+
+                <button 
+                  onClick={() => toggleOption('compatibility')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm border transition-all ${options.compatibility ? 'bg-indigo-600 border-indigo-500 text-white shadow-lg shadow-indigo-900/50' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-750'}`}
+                >
+                  <ShieldCheck size={14} />
+                  <span>توافق 32/64</span>
+                </button>
+
+                <button 
+                  onClick={() => toggleOption('codeCorrection')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm border transition-all ${options.codeCorrection ? 'bg-rose-600 border-rose-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-750'}`}
+                >
+                  <Wrench size={14} />
+                  <span>تصحيح برمجي</span>
+                </button>
+
+                <button 
+                  onClick={() => toggleOption('formatting')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm border transition-all ${options.formatting ? 'bg-emerald-600 border-emerald-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-750'}`}
+                >
+                  <AlignLeft size={14} />
+                  <span>تنسيق</span>
+                </button>
+
+                <button 
+                  onClick={() => toggleOption('commentsAr')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm border transition-all ${options.commentsAr ? 'bg-blue-600 border-blue-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-750'}`}
+                >
+                  <MessageSquare size={14} />
+                  <span>تعليق (عربي)</span>
+                </button>
+
+                <button 
+                  onClick={() => toggleOption('commentsEn')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm border transition-all ${options.commentsEn ? 'bg-cyan-600 border-cyan-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-750'}`}
+                >
+                  <Languages size={14} />
+                  <span>تعليق (EN)</span>
+                </button>
+
+                <button 
+                  onClick={() => toggleOption('errorHandling')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm border transition-all ${options.errorHandling ? 'bg-amber-600 border-amber-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-750'}`}
+                >
+                  <Bug size={14} />
+                  <span>صائد الأخطاء</span>
+                </button>
+
+                <button 
+                  onClick={() => toggleOption('lineNumbers')}
+                  className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm border transition-all ${options.lineNumbers ? 'bg-purple-600 border-purple-500 text-white' : 'bg-slate-800 border-slate-700 text-slate-400 hover:bg-slate-750'}`}
+                >
+                  <Hash size={14} />
+                  <span>ترقيم الأسطر</span>
+                </button>
+             </div>
+
+             {/* Action Buttons */}
+             <div className="flex gap-2 w-full md:w-auto justify-end">
                 <button 
                   onClick={handleReset}
-                  className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md transition-all flex items-center gap-2 border border-slate-700 font-medium text-sm"
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-md transition-all flex items-center gap-2 border border-slate-700 font-medium text-xs md:text-sm"
                 >
-                    <RotateCcw size={16} />
+                    <RotateCcw size={14} />
                     <span>تفريغ</span>
                 </button>
                 <button 
                   onClick={handleProcess}
                   disabled={status === AnalysisStatus.ANALYZING || status === AnalysisStatus.CONVERTING}
-                  className={`px-6 py-2 rounded-md transition-all flex items-center gap-2 font-bold text-sm shadow-lg
+                  className={`px-4 py-1.5 rounded-md transition-all flex items-center gap-2 font-bold text-xs md:text-sm shadow-lg whitespace-nowrap
                     ${status === AnalysisStatus.ANALYZING || status === AnalysisStatus.CONVERTING 
                       ? 'bg-indigo-900/50 text-indigo-300 cursor-not-allowed border border-indigo-800' 
                       : 'bg-indigo-600 hover:bg-indigo-500 text-white shadow-indigo-500/25 border border-indigo-500'}`}
                 >
-                    <Zap size={16} className={status === AnalysisStatus.CONVERTING ? "fill-current" : ""} />
-                    <span>فحص ومعالجة الكود</span>
+                    <Zap size={14} className={status === AnalysisStatus.CONVERTING ? "fill-current" : ""} />
+                    <span>تشغيل المعالج</span>
                 </button>
             </div>
+          </div>
         </div>
 
         {/* Editors Grid */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 flex-1 min-h-0">
             <CodeEditor 
-                title="الكود الأصلي (VBV/VBA)" 
+                title="الكود الأصلي (VBA)" 
                 code={inputCode} 
                 onChange={setInputCode}
-                placeholder="ألصق كود VBV أو VBA هنا... مثال: Private Declare Function..."
-                borderColor={inputCode && !inputCode.toLowerCase().includes('ptrsafe') ? 'border-amber-500/30' : 'border-slate-700'}
+                placeholder="ألصق كود VBA هنا... مثال: Private Declare Function..."
+                borderColor={inputCode && options.compatibility && !inputCode.toLowerCase().includes('ptrsafe') ? 'border-amber-500/30' : 'border-slate-700'}
             />
             <CodeEditor 
-                title="الكود المعالج (x86 & x64)" 
+                title="الكود الناتج" 
                 code={outputCode} 
                 readOnly
-                placeholder="سيظهر الكود المصحح هنا..."
+                placeholder="سيظهر الكود الناتج هنا بعد المعالجة..."
                 borderColor={outputCode ? 'border-emerald-500/30' : 'border-slate-700'}
             />
         </div>

@@ -1,54 +1,120 @@
 import { GoogleGenAI } from "@google/genai";
+import { ProcessingOptions } from "../types";
 
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
-export const convertVBACode = async (code: string): Promise<string> => {
+export const convertVBACode = async (code: string, options: ProcessingOptions): Promise<string> => {
   if (!code.trim()) return "";
 
   try {
     const model = 'gemini-2.5-flash';
-    const systemInstruction = `
-      You are an expert Visual Basic (VBA/VB6) developer.
-      Your task is to convert the provided code to be fully compatible with BOTH Legacy 32-bit (VBA6) and Modern 32-bit/64-bit (VBA7) architectures using Conditional Compilation.
+    
+    // Build dynamic instructions based on user options
+    let instructionParts = [
+      `You are an expert Visual Basic (VBA/VB6) developer known as "VBA Code Doctor".`,
+      `Your task is to rewrite the user's code applying ONLY the enabled rules below.`,
+      `Output raw VBA code only. Do NOT wrap the code in markdown blocks (e.g. no \`\`\`vba).`
+    ];
 
-      STRICT RULES FOR EVERY 'DECLARE' STATEMENT:
-      You must wrap every API declaration in an #If VBA7 block following this exact pattern:
+    if (options.compatibility) {
+      instructionParts.push(`
+      [ENABLED] COMPATIBILITY RULE (32-bit & 64-bit):
+      - You MUST wrap every API 'Declare' statement in an #If VBA7 block.
+      - #If VBA7 Then: Use 'Declare PtrSafe' and 'LongPtr' for handles/pointers.
+      - #Else: Use 'Declare' (no PtrSafe) and 'Long' for handles/pointers.
+      - Ensure the logic works on both architectures.
+      `);
+    }
 
-      #If VBA7 Then
-          ' Modern Syntax (VBA7 for 32-bit & 64-bit)
-          ' 1. MUST use 'PtrSafe' keyword.
-          ' 2. MUST use 'LongPtr' for Handles (hWnd, hDC), Pointers, and Memory Addresses.
-          ' 3. Keep 'Long' for standard 32-bit integers.
-          Public Declare PtrSafe Function Example Lib "dll" (ByVal hWnd As LongPtr) As Long
-      #Else
-          ' Legacy Syntax (VBA6 for older 32-bit only)
-          ' 1. MUST NOT use 'PtrSafe'.
-          ' 2. MUST use 'Long' for Handles and Pointers (LongPtr does not exist here).
-          Public Declare Function Example Lib "dll" (ByVal hWnd As Long) As Long
-      #End If
+    if (options.codeCorrection) {
+      instructionParts.push(`
+      [ENABLED] CODE CORRECTION RULE:
+      - Fix any syntax errors or logical bugs in the code.
+      - Ensure 'Option Explicit' compliance (declare missing variables).
+      - Correct misuse of 'Set' for objects vs simple assignment.
+      - Fix loop terminations (Next i, Loop, Wend) matching.
+      - Address potential division by zero or type mismatch errors where obvious.
+      `);
+    }
 
-      ADDITIONAL RULES:
-      1. Analyze parameters carefully. Only change types that are Pointers or Handles to LongPtr in the VBA7 section.
-      2. Do not change the logic of Sub/Function bodies unless they rely on specific pointer arithmetic that differs.
-      3. Return ONLY the code block. No markdown, no comments outside the code.
-    `;
+    if (options.formatting) {
+      instructionParts.push(`
+      [ENABLED] FORMATTING RULE:
+      - Indent code perfectly using 4 spaces.
+      - Add blank lines between procedures.
+      - Fix casing of keywords (e.g., 'sub' -> 'Sub', 'dim' -> 'Dim').
+      `);
+    }
+
+    // Comment Handling
+    if (options.commentsAr && options.commentsEn) {
+       instructionParts.push(`
+      [ENABLED] COMMENTS RULE (BILINGUAL):
+      - Add comprehensive comments to explain complex logic.
+      - Comments MUST be in BOTH Arabic and English.
+      - Example: ' حفظ الملف -- Save the file
+      `);
+    } else if (options.commentsAr) {
+      instructionParts.push(`
+      [ENABLED] COMMENTS RULE (ARABIC):
+      - Add comprehensive comments to explain complex logic.
+      - Comments MUST be in ARABIC ONLY.
+      `);
+    } else if (options.commentsEn) {
+      instructionParts.push(`
+      [ENABLED] COMMENTS RULE (ENGLISH):
+      - Add comprehensive comments to explain complex logic.
+      - Comments MUST be in ENGLISH ONLY.
+      `);
+    }
+
+    if (options.errorHandling) {
+      instructionParts.push(`
+      [ENABLED] ERROR HANDLING RULE:
+      - Wrap every Sub and Function with a robust error handler.
+      - Pattern:
+        On Error GoTo ErrorHandler
+        ' ... code ...
+        Exit Sub
+        ErrorHandler:
+        MsgBox "Error " & Err.Number & ": " & Err.Description, vbCritical, "Error"
+        Resume Next ' Or Exit, depending on safety
+      `);
+    }
+
+    if (options.lineNumbers) {
+      instructionParts.push(`
+      [ENABLED] LINE NUMBERS RULE:
+      - Add standard VBA line numbers (10, 20, 30...) to every executable line of code.
+      - This is for use with the 'Erl' function.
+      - Do not number Dim statements, comments, or labels.
+      `);
+    }
+
+    const systemInstruction = instructionParts.join("\n");
 
     const response = await ai.models.generateContent({
       model: model,
       contents: [
         {
           role: 'user',
-          parts: [{ text: `Convert this VBV/VBA code to dual architecture (VBA7/Legacy) format:\n\n${code}` }]
+          parts: [{ text: `Apply the enabled rules to this code:\n\n${code}` }]
         }
       ],
       config: {
         systemInstruction: systemInstruction,
-        temperature: 0.1, // Very low temperature for strict adherence to syntax rules
+        temperature: 0.2, 
       }
     });
 
-    return response.text?.trim() || "";
+    let text = response.text?.trim() || "";
+
+    // Clean up markdown formatting often returned by LLMs (remove ```vba and ```)
+    text = text.replace(/^```(?:vba|vb)?\s*[\r\n]*/i, ''); 
+    text = text.replace(/[\r\n]*\s*```$/i, '');
+
+    return text.trim();
   } catch (error) {
     console.error("Gemini Conversion Error:", error);
     throw new Error("حدث خطأ أثناء الاتصال بخدمة الذكاء الاصطناعي");

@@ -19,3 +19,13 @@ export interface CompatibilityReport {
   bit32Only: boolean;
   bit64Only: boolean;
 }
+
+export interface ProcessingOptions {
+  compatibility: boolean;
+  formatting: boolean;
+  commentsAr: boolean;
+  commentsEn: boolean;
+  errorHandling: boolean;
+  lineNumbers: boolean;
+  codeCorrection: boolean;
+}
