@@ -4,7 +4,7 @@ import { ProcessingOptions } from "../types";
 const apiKey = process.env.API_KEY || '';
 const ai = new GoogleGenAI({ apiKey });
 
-export const convertVBACode = async (code: string, options: ProcessingOptions): Promise<string> => {
+export const convertVBACode = async (code: string, options: ProcessingOptions, customInstruction?: string): Promise<string> => {
   if (!code.trim()) return "";
 
   try {
@@ -92,6 +92,15 @@ export const convertVBACode = async (code: string, options: ProcessingOptions): 
       `);
     }
 
+    // Add user custom instruction if provided
+    if (customInstruction && customInstruction.trim()) {
+      instructionParts.push(`
+      [USER SPECIAL INSTRUCTION - PRIORITY]:
+      The user has provided a specific direction that you MUST follow:
+      "${customInstruction.trim()}"
+      `);
+    }
+
     const systemInstruction = instructionParts.join("\n");
 
     const response = await ai.models.generateContent({
@@ -99,7 +108,7 @@ export const convertVBACode = async (code: string, options: ProcessingOptions): 
       contents: [
         {
           role: 'user',
-          parts: [{ text: `Apply the enabled rules to this code:\n\n${code}` }]
+          parts: [{ text: `Apply the enabled rules and the special instruction to this code:\n\n${code}` }]
         }
       ],
       config: {
@@ -110,7 +119,7 @@ export const convertVBACode = async (code: string, options: ProcessingOptions): 
 
     let text = response.text?.trim() || "";
 
-    // Clean up markdown formatting often returned by LLMs (remove ```vba and ```)
+    // Clean up markdown formatting
     text = text.replace(/^```(?:vba|vb)?\s*[\r\n]*/i, ''); 
     text = text.replace(/[\r\n]*\s*```$/i, '');
 

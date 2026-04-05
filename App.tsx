@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Cpu, Zap, RotateCcw, ShieldCheck, Settings2, FileCode, MessageSquare, Bug, Hash, AlignLeft, Wrench, Activity, Languages, Globe } from 'lucide-react';
+import { Cpu, Zap, RotateCcw, ShieldCheck, Settings2, FileCode, MessageSquare, Bug, Hash, AlignLeft, Wrench, Activity, Languages, Globe, Sparkles } from 'lucide-react';
 import CodeEditor from './components/CodeEditor';
 import Terminal from './components/Terminal';
 import { AnalysisStatus, LogEntry, ProcessingOptions } from './types';
@@ -10,34 +10,33 @@ export default function App() {
   const [outputCode, setOutputCode] = useState<string>('');
   const [status, setStatus] = useState<AnalysisStatus>(AnalysisStatus.IDLE);
   const [logs, setLogs] = useState<LogEntry[]>([]);
+  const [customInstruction, setCustomInstruction] = useState<string>('');
   
   // Global Usage Counter State
   const [usageCount, setUsageCount] = useState<number>(0);
   const [isCountLoaded, setIsCountLoaded] = useState<boolean>(false);
   
-  // Options State
+  // Options State - Updated Defaults
   const [options, setOptions] = useState<ProcessingOptions>({
-    compatibility: true,
+    compatibility: false,
     formatting: false,
     commentsAr: false,
     commentsEn: false,
     errorHandling: false,
     lineNumbers: false,
-    codeCorrection: false
+    codeCorrection: true
   });
 
   // Fetch Global Count on Mount
   useEffect(() => {
     const fetchGlobalCount = async () => {
       try {
-        // Changed key to vba-doctor-v2 to reset counter.
         const response = await fetch('https://api.countapi.xyz/get/gemini-vba-doctor-v2/conversions');
         if (response.ok) {
           const data = await response.json();
           setUsageCount(data.value || 0);
           setIsCountLoaded(true);
         } else {
-          // If key doesn't exist yet, it's 0.
           setUsageCount(0);
           setIsCountLoaded(true);
         }
@@ -48,7 +47,6 @@ export default function App() {
 
     const useFallbackCount = () => {
       const local = parseInt(localStorage.getItem('vba_doctor_usage') || '0', 10);
-      // Removed fake base number. Shows real local count if API fails.
       setUsageCount(local); 
       setIsCountLoaded(true);
     };
@@ -68,6 +66,7 @@ export default function App() {
   const handleReset = () => {
     setInputCode('');
     setOutputCode('');
+    setCustomInstruction('');
     setLogs([]);
     setStatus(AnalysisStatus.IDLE);
     addLog('System reset.', 'info');
@@ -96,7 +95,6 @@ export default function App() {
     }
 
     try {
-        // AI Analysis (Only runs basic checks, separate from the main conversion options)
         const issues = await analyzeCodeIssues(inputCode);
         if (issues.length > 0) {
             issues.forEach(issue => addLog(`Issue identified: ${issue}`, 'warning'));
@@ -107,8 +105,11 @@ export default function App() {
         // Phase 2: Convert
         setStatus(AnalysisStatus.CONVERTING);
         addLog('Applying selected processing rules...', 'info');
+        if (customInstruction.trim()) {
+            addLog(`Applying custom direction: "${customInstruction.substring(0, 30)}..."`, 'info');
+        }
         
-        const converted = await convertVBACode(inputCode, options);
+        const converted = await convertVBACode(inputCode, options, customInstruction);
         
         setOutputCode(converted);
         setStatus(AnalysisStatus.COMPLETED);
@@ -121,14 +122,12 @@ export default function App() {
             const data = await res.json();
             setUsageCount(data.value);
           } else {
-             // Fallback increment
              setUsageCount(prev => prev + 1);
           }
         } catch (e) {
              setUsageCount(prev => prev + 1);
         }
 
-        // Keep local sync just in case
         const currentLocal = parseInt(localStorage.getItem('vba_doctor_usage') || '0', 10);
         localStorage.setItem('vba_doctor_usage', (currentLocal + 1).toString());
 
@@ -169,8 +168,8 @@ export default function App() {
       {/* Main Content */}
       <main className="flex-1 relative flex flex-col p-4 md:p-6 gap-4 overflow-hidden">
         
-        {/* Settings Panel */}
-        <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-3">
+        {/* Settings & Special Instructions Panel */}
+        <div className="bg-slate-900/50 border border-slate-800 rounded-xl p-4 shadow-2xl space-y-4 transition-all hover:border-slate-700/50">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
              
              {/* Options Grid */}
@@ -258,6 +257,19 @@ export default function App() {
                     <span>تشغيل المعالج</span>
                 </button>
             </div>
+          </div>
+
+          {/* Custom Instruction Box */}
+          <div className="relative group">
+            <div className="absolute left-3 top-3 text-slate-500 group-focus-within:text-indigo-400 transition-colors">
+              <Sparkles size={16} />
+            </div>
+            <textarea 
+              value={customInstruction}
+              onChange={(e) => setCustomInstruction(e.target.value)}
+              placeholder="هل لديك طلب خاص؟ (مثال: اجعل أسماء المتغيرات بالعربية، أو استخدم مكتبة FSO حصرياً...)"
+              className="w-full bg-slate-950 border border-slate-800 rounded-lg py-2.5 pr-4 pl-10 text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500/50 transition-all resize-none h-12 hover:border-slate-700"
+            />
           </div>
         </div>
 
