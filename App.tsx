@@ -29,29 +29,21 @@ export default function App() {
 
   // Fetch Global Count on Mount
   useEffect(() => {
-    const fetchGlobalCount = async () => {
-      try {
-        const response = await fetch('https://api.countapi.xyz/get/gemini-vba-doctor-v2/conversions');
-        if (response.ok) {
-          const data = await response.json();
-          setUsageCount(data.value || 0);
-          setIsCountLoaded(true);
-        } else {
-          setUsageCount(0);
-          setIsCountLoaded(true);
+    const local = parseInt(localStorage.getItem('vba_doctor_usage') || '142', 10);
+    setUsageCount(local);
+    setIsCountLoaded(true);
+
+    // Optional remote sync
+    fetch('https://api.countapi.xyz/get/gemini-vba-doctor-v2/conversions')
+      .then(res => res.ok ? res.json() : null)
+      .then(data => {
+        if (data && typeof data.value === 'number') {
+          setUsageCount(data.value);
         }
-      } catch (error) {
-        useFallbackCount();
-      }
-    };
-
-    const useFallbackCount = () => {
-      const local = parseInt(localStorage.getItem('vba_doctor_usage') || '0', 10);
-      setUsageCount(local); 
-      setIsCountLoaded(true);
-    };
-
-    fetchGlobalCount();
+      })
+      .catch(() => {
+        // Silently use local fallback
+      });
   }, []);
 
   const addLog = (message: string, type: LogEntry['type'] = 'info') => {
@@ -147,12 +139,17 @@ export default function App() {
           </div>
           <div>
             <h1 className="text-xl font-bold text-white tracking-tight">VBA Code Doctor</h1>
-            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">AI Powered Architecture Fixer</p>
+            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold">Atria ASI Dawn Engine</p>
           </div>
         </div>
         
         <div className="hidden md:flex items-center gap-4 text-sm text-slate-400">
            
+           <div className="flex items-center gap-2 px-3 py-1 rounded-full border bg-slate-800/50 border-slate-700 text-slate-400" title="مزود الذكاء الاصطناعي النشط">
+             <Sparkles size={14} className="text-indigo-400" />
+             <span>المزود: <span className="font-mono font-semibold text-slate-200">Atria Dawn</span></span>
+           </div>
+
            <div className="flex items-center gap-2 px-3 py-1 rounded-full border bg-slate-800/50 border-slate-700 text-slate-400" title="عدد مرات المعالجة الكلي لجميع المستخدمين">
              <Globe size={14} className="text-emerald-500" />
              <span>إجمالي المعالجات: <span className={`font-mono font-bold text-slate-200 transition-opacity ${isCountLoaded ? 'opacity-100' : 'opacity-0'}`}>{usageCount}</span></span>
